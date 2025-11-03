@@ -3,37 +3,6 @@ use std::io::{self, BufRead};
 use std::path::Path;
 use std::{env, fmt};
 
-fn open_commands_file_with_buffered_reader() -> io::Result<io::Lines<io::BufReader<File>>>
-{
-    const COMMANDS_FILE: &str = "./commands.txt";
-    let path = Path::new(COMMANDS_FILE);
-
-    if !path.exists()
-    {
-        match env::current_dir()
-        {
-            Ok(cwd) => {
-                eprintln!(
-                    "Error: Command file '{}' not found in directory '{}'.",
-                    COMMANDS_FILE,
-                    cwd.display()
-                );
-            }
-            Err(e) => eprintln!("Failed to resolve current working directory: {}", e),
-        }
-
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("Command file '{}' missing", COMMANDS_FILE),
-        ));
-    }
-
-    // Return BufReader to iterate lines
-    let file = File::open(path)?;
-    return Ok(io::BufReader::new(file).lines())
-}
-
-
 pub enum Command
 {
     Insert { name: String, salary: u32, priority: u32 },
@@ -95,6 +64,36 @@ impl fmt::Display for Command
 
 
 
+fn open_commands_file_with_buffered_reader() -> io::Result<io::Lines<io::BufReader<File>>>
+{
+    const COMMANDS_FILE: &str = "./commands.txt";
+    let path = Path::new(COMMANDS_FILE);
+
+    if !path.exists()
+    {
+        match env::current_dir()
+        {
+            Ok(cwd) => {
+                eprintln!(
+                    "Error: Command file '{}' not found in directory '{}'.",
+                    COMMANDS_FILE,
+                    cwd.display()
+                );
+            }
+            Err(e) => eprintln!("Failed to resolve current working directory: {}", e),
+        }
+
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("Command file '{}' missing", COMMANDS_FILE),
+        ));
+    }
+
+    // Return BufReader to iterate lines
+    let file = File::open(path)?;
+    return Ok(io::BufReader::new(file).lines())
+}
+
 pub fn collect_commands() -> Vec<Command>
 {
     let mut v: Vec<Command> = Vec::new();
@@ -114,7 +113,7 @@ pub fn collect_commands() -> Vec<Command>
 fn compile_command(cmd: String) -> Option<Command>
 {
     let mut components = cmd.split(',').map(|s| s.trim());
-    let operation = components.next().expect("Empty line (command) encountered");
+    let operation = components.next().expect("split-error");
 
     // Define the macro with a name
     macro_rules! expect_param {

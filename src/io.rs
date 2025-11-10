@@ -13,24 +13,6 @@ pub enum Command
 
 impl Command
 {
-    pub fn name(&self) -> Option<&String> {
-        return match(self) {
-            Command::Insert { name, .. } => Some(name),
-            Command::Delete { name, .. } => Some(name),
-            Command::Search { name, .. } => Some(name),
-            _ => None,
-        }
-    }
-
-    pub fn salary(&self) -> Option<u32> {
-        return match(self) {
-            Command::Insert { salary, .. } => Some(*salary),
-            Command::Delete { .. } => None,
-            Command::Search { .. } => None,
-            Command::Print { .. } => None,
-        }
-    }
-
     pub fn priority(&self) -> u32 {
         return match self {
             Command::Insert { priority, .. } => *priority,
@@ -116,7 +98,7 @@ fn compile_command(cmd: String) -> Option<Command>
     let operation = components.next().expect("split-error");
 
     // Define the macro with a name
-    macro_rules! expect_param {
+    macro_rules! expect_parameter {
         // Specify the parameters (...) of the macro
         ($parameter:literal) => { // Beginning of macro block
             // The macro expands into this block's contents
@@ -140,8 +122,8 @@ fn compile_command(cmd: String) -> Option<Command>
     // Otherwise returning the 'T' value
     macro_rules! parse_u32 {
         ($value:expr, $parameter:literal) => {
-            // "|| {}" defines a "closure", there can be arguments within |...|
-            // Underscore _ expresses to ignore the argument(s), e.g. |_|, |a, _|, etc.
+            // "|| {}" defines a 'closure', there can be arguments within |...|
+            // Underscore _ expresses to ignore the argument(s), e.g. |_|, |_, a, _|, etc.
             $value.parse::<u32>().unwrap_or_else(|_| {
                 panic!(
                     r#"
@@ -162,9 +144,9 @@ fn compile_command(cmd: String) -> Option<Command>
     match operation
     {
         "insert" => {
-            let name = expect_param!("name").to_string();
-            let salary = expect_param!("salary");
-            let priority = expect_param!("priority");
+            let name = expect_parameter!("name").to_string();
+            let salary = expect_parameter!("salary");
+            let priority = expect_parameter!("priority");
             // Shadowing
             let salary = parse_u32!(salary, "salary");
             let priority = parse_u32!(priority, "priority");
@@ -172,19 +154,19 @@ fn compile_command(cmd: String) -> Option<Command>
         }
 
         "delete" | "search" => {
-            let name = expect_param!("name").to_string();
-            let priority = expect_param!("priority");
+            let name = expect_parameter!("name").to_string();
+            let priority = expect_parameter!("priority");
             // Shadowing
             let priority = parse_u32!(priority, "priority");
-            if operation == "delete" {
-                return Some(Command::Delete { name, priority });
+            return if operation == "delete" {
+                Some(Command::Delete { name, priority })
             } else {
-                return Some(Command::Search { name, priority });
+                Some(Command::Search { name, priority })
             }
         }
 
         "print" => {
-            let priority = expect_param!("priority");
+            let priority = expect_parameter!("priority");
             // Shadowing
             let priority = parse_u32!(priority, "priority");
             return Some(Command::Print { priority });

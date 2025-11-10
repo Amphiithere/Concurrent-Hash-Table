@@ -1,41 +1,22 @@
 
-/// Modified binary search to return the closest greater than or equal prime number
-/// from the constant primes array
-/// ```
-/// static PRIMES
-/// ```
-pub fn search_closest_prime(target: u32) -> u32
+pub fn search_closest_ge(target: u32) -> u32
 {
-    let mut l = 0;
-    let mut r = PRIMES.len() - 1;
-
-    while l < r
-    {
-        let m = l + (r - l) / 2;
-        let value = PRIMES[m];
-
-        if target == value {
-            return value;
-        }
-
-        if target < value {
-            r = m - 1;
-        }
-
-        if target > value {
-            l = m + 1;
+    // Arrays have a binary search method built-in
+    return match PRIMES.binary_search(&target) {
+        // Unpack the contained position as the variable 'index'
+        Ok(index) => PRIMES[index], // Returns the exact index of the target
+        Err(index) => {
+            let n = PRIMES.len();
+            if index >= n { PRIMES[n - 1] } else { PRIMES[index] }
         }
     }
-
-    let prime = PRIMES[l];
-    if prime < target {
-        return PRIMES[l + 1];
-    }
-
-    return prime;
 }
 
-/// The first 10,000 primes
+pub fn exceeds_largest(target: u32) -> bool {
+    return target > PRIMES[PRIMES.len() - 1];
+}
+
+/// The first 10,000 primes.
 static PRIMES: [u32; 10000] = [
     2, 3, 5, 7, 11, 13, 17, 19, 23, 29,
     31, 37, 41, 43, 47, 53, 59, 61, 67, 71,

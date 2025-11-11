@@ -1,4 +1,3 @@
-
 use std::num::Wrapping;
 
 /// Jenkins 'one_at_a_time' hashing function \
@@ -31,4 +30,11 @@ pub fn one_at_a_time<T: Into<String>>(string: T) -> u32
     hash += hash << 15;
 
     return hash.0;
+}
+
+pub fn assert() {
+    let hash = one_at_a_time("The quick brown fox jumps over the lazy dog");
+    assert_eq!(hash, 0x519e91f5);
+    let hash = one_at_a_time("a");
+    assert_eq!(hash, 0xca2e9442);
 }

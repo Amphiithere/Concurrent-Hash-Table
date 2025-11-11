@@ -1,5 +1,5 @@
 
-pub fn search_closest_ge(target: u32) -> u32
+pub fn search_closest_larger(target: u32) -> u32
 {
     // Arrays have a binary search method built-in
     return match PRIMES.binary_search(&target) {

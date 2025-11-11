@@ -8,18 +8,34 @@ pub enum Command
     Insert { name: String, salary: u32, priority: u32 },
     Delete { name: String, priority: u32 },
     Search { name: String, priority: u32 },
-    Print { priority: u32 },
+    Print { priority: u32 }
 }
 
 impl Command
 {
+    pub fn name(&self) -> Option<String> {
+        return match self {
+            Command::Insert { name, .. } |
+            Command::Delete { name, .. } |
+            Command::Search { name, .. } => Some(name.clone()),
+            _ => None
+        };
+    }
+
+    pub fn salary(&self) -> Option<u32> {
+        return match self {
+            Command::Insert { salary, .. } => Some(*salary),
+            _ => None
+        };
+    }
+
     pub fn priority(&self) -> u32 {
         return match self {
-            Command::Insert { priority, .. } => *priority,
-            Command::Delete { priority, .. } => *priority,
-            Command::Search { priority, .. } => *priority,
-            Command::Print { priority, .. } => *priority,
-        }
+            Command::Insert { priority, .. } |
+            Command::Delete { priority, .. } |
+            Command::Search { priority, .. } |
+            Command::Print { priority, .. } => *priority
+        };
     }
 }
 
@@ -27,7 +43,7 @@ impl fmt::Display for Command
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
     {
-        match self {
+        return match self {
             Command::Insert { name, salary, priority } => {
                 write!(f, "insert,{},{},{}", name, salary, priority)
             }
@@ -40,7 +56,7 @@ impl fmt::Display for Command
             Command::Print { priority } => {
                 write!(f, "print,{}", priority)
             }
-        }
+        };
     }
 }
 
@@ -51,6 +67,7 @@ fn open_commands_file_with_buffered_reader() -> io::Result<io::Lines<io::BufRead
     const COMMANDS_FILE: &str = "./commands.txt";
     let path = Path::new(COMMANDS_FILE);
 
+    // Error Handling
     if !path.exists()
     {
         match env::current_dir()
@@ -62,7 +79,7 @@ fn open_commands_file_with_buffered_reader() -> io::Result<io::Lines<io::BufRead
                     cwd.display()
                 );
             }
-            Err(e) => eprintln!("Failed to resolve current working directory: {}", e),
+            Err(e) => eprintln!("Failed to resolve current working directory:\n{}", e),
         }
 
         return Err(io::Error::new(
@@ -72,30 +89,40 @@ fn open_commands_file_with_buffered_reader() -> io::Result<io::Lines<io::BufRead
     }
 
     // Return BufReader to iterate lines
+    // ? operator suffixing the function call makes it so that it
+    // immediately returns an 'Err(...)' if something goes wrong
     let file = File::open(path)?;
     return Ok(io::BufReader::new(file).lines())
 }
 
-pub fn collect_commands() -> Vec<Command>
+pub fn collect_commands() -> (Vec<Command>, usize)
 {
-    let mut v: Vec<Command> = Vec::new();
+    let mut inserts = 0;
+    let mut commands: Vec<Command> = Vec::new();
+
     // Unwrap the BufferedReader from Ok(...)
-    if let Ok(lines) = open_commands_file_with_buffered_reader() {
-        for line in lines.map_while(Result::ok) {
+    if let Ok(lines) = open_commands_file_with_buffered_reader()
+    {
+        for line in lines.map_while(Result::ok)
+        {
             // Unwrap the Command from Some(...)
-            if let Some(cmd) = compile_command(line) {
-                v.push(cmd);
+            if let Some(command) = compile_command(line)
+            {
+                if let Command::Insert { .. } = &command {
+                    inserts += 1
+                }
+                commands.push(command);
             }
         }
     }
-    v.sort_unstable_by_key(|cmd| cmd.priority());
-    return v;
+    commands.sort_unstable_by_key(|c| c.priority());
+    return (commands, inserts);
 }
 
 fn compile_command(cmd: String) -> Option<Command>
 {
     let mut components = cmd.split(',').map(|s| s.trim());
-    let operation = components.next().expect("split-error");
+    let operation = components.next().expect("unknown split-error");
 
     // Define the macro with a name
     macro_rules! expect_parameter {
@@ -162,7 +189,7 @@ fn compile_command(cmd: String) -> Option<Command>
                 Some(Command::Delete { name, priority })
             } else {
                 Some(Command::Search { name, priority })
-            }
+            };
         }
 
         "print" => {
@@ -203,5 +230,5 @@ fn expected_format(op: &str) -> &'static str {
         "search" => "search,<name>,<priority>",
         "print" => "print,<priority>",
         _ => "<not-applicable>",
-    }
+    };
 }

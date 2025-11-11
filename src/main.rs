@@ -2,28 +2,34 @@ use crate::io::{collect_commands, Command};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::thread;
-use crate::map::ConcurrentEmployeeSalaryMap as ConcurrentMap;
+use crate::map::{ConcurrentEmployeeSalaryMap as Map, HashRecord};
 
 mod hashing;
 mod io;
 mod map;
 mod primes;
+mod testing;
 
 fn main()
 {
-    let commands = collect_commands();
-    let hashmap = ConcurrentMap::new_defaulted(commands.len());
+    // testing::run();
+    let (commands, inserts) = collect_commands();
+    let hashmap = Map::new_defaulted(
+        (inserts as f64 * 2.0) as usize
+    );
     spawn_threads(commands, hashmap);
 }
+
+
 
 pub fn current_timestamp() -> u64 {
     return SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
-        .as_micros() as u64
+        .as_micros() as u64;
 }
 
-fn spawn_threads(commands: Vec<Command>, hashmap: ConcurrentMap)
+fn spawn_threads(commands: Vec<Command>, hashmap: Map)
 {
     let n = commands.len();
     // Shadowed
@@ -71,14 +77,14 @@ fn spawn_threads(commands: Vec<Command>, hashmap: ConcurrentMap)
             // Command matching and execution
             // ====================================================================================
             match command {
-                Command::Insert { name, salary, priority } => {
+                Command::Insert { .. } => {
+                    
                 }
-                Command::Delete { name, priority } => {
+                Command::Delete { .. } => {
                 }
-                Command::Search { name, priority } => {
+                Command::Search { .. } => {
                 }
-                Command::Print { priority } => {
-
+                Command::Print { .. } => {
                 }
             }
             // ====================================================================================

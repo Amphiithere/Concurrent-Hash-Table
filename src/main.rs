@@ -1,8 +1,8 @@
 use crate::io::{collect_commands, Command};
+use crate::map::ConcurrentEmployeeSalaryMap as Map;
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::thread;
-use crate::map::{ConcurrentEmployeeSalaryMap as Map, HashRecord};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 mod hashing;
 mod io;
@@ -77,14 +77,14 @@ fn spawn_threads(commands: Vec<Command>, hashmap: Map)
             // Command matching and execution
             // ====================================================================================
             match command {
-                Command::Insert { .. } => {
-                    
+                Command::Insert { name, salary, priority } => {
+                    hashmap.insert(name, *salary, *priority);
                 }
-                Command::Delete { .. } => {
+                Command::Delete { name, priority } => {
                 }
-                Command::Search { .. } => {
+                Command::Search { name, priority } => {
                 }
-                Command::Print { .. } => {
+                Command::Print { priority } => {
                 }
             }
             // ====================================================================================

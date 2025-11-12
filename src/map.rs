@@ -1,7 +1,7 @@
+use std::ptr;
 use crate::hashing;
-use crate::io::Command;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex, RwLock};
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
+use std::sync::{Arc, RwLock};
 
 pub struct HashRecord
 {
@@ -33,14 +33,14 @@ impl HashRecord
 
 pub struct Bucket
 {
-    backing: Option<Arc<HashRecord>>
+    entries: Option<Arc<HashRecord>>
 }
 
 impl Bucket
 {
     fn new() -> Self {
         return Self {
-            backing: None
+            entries: None
         }
     }
 }
@@ -48,12 +48,12 @@ impl Bucket
 impl Bucket
 {
     fn is_empty(&self) -> bool {
-        return self.backing.is_none();
+        return self.entries.is_none();
     }
 
     fn is_chained(&self) -> bool {
-        return if let Some(backing) = &self.backing {
-            backing.has_next()
+        return if let Some(root) = &self.entries {
+            root.has_next()
         } else {
             false
         };
@@ -62,52 +62,65 @@ impl Bucket
 
 
 
+struct Backing
+{
+    vector: Vec<RwLock<Bucket>>
+}
+
+impl Backing
+{
+    fn new(capacity: usize) -> Self {
+        let mut vector: Vec<RwLock<Bucket>> = Vec::with_capacity(capacity);
+        for _ in 0..capacity {
+            vector.push(RwLock::new(Bucket::new()));
+        }
+        return Self {
+            vector
+        }
+    }
+}
+
+
+
 pub struct ConcurrentEmployeeSalaryMap
 {
     // Attributes
-    backing: Vec<RwLock<Bucket>>,
+    migrating: Arc<AtomicPtr<Backing>>,
+    backing: Arc<AtomicPtr<Backing>>,
     capacity: AtomicUsize,
     size: AtomicUsize,
     threshold: f32,
     scaling: f32,
-    // Concurrency Internals
-    active_threads: AtomicUsize,
-    is_resizing: Mutex<bool>,
-    resizing_cv: Condvar,
-    is_printing: Mutex<bool>,
-    printing_cv: Condvar,
+    is_migrating: AtomicBool,
 }
 
 // Constructing
 impl ConcurrentEmployeeSalaryMap
 {
-    fn create_backing(capacity: usize) -> Vec<RwLock<Bucket>>
-    {
-        let mut vec = Vec::with_capacity(capacity);
-        for _ in 0..capacity {
-            vec.push(RwLock::new(Bucket::new()));
-        }
-        return vec;
-    }
-
     pub fn new(capacity: usize, threshold: f32, scaling: f32) -> Self
     {
         if capacity <= 0 {
             panic!("Initial capacity must be greater than 0");
         }
 
+        // Arc heap allocates the argument
+        let initial_backing = Arc::new(Backing::new(capacity));
+        // This allows the pointer to the allocation on the heap to be intentionally exposed
+        let pointer = Arc::into_raw(initial_backing) as *mut Backing;
+        // Wraps the pointer into a managed atomic pointer which will maintain the
+        // reference count and allow it to be shared between threads
+        let atomic = Arc::new(AtomicPtr::new(pointer));
+
+        // 'initial_backing'
         return Self {
-            backing: Self::create_backing(capacity),
+            migrating: Arc::new(AtomicPtr::new(ptr::null_mut())),
+            backing: atomic,
             capacity: AtomicUsize::new(capacity),
             size: AtomicUsize::new(0),
             threshold,
             scaling,
-            active_threads: AtomicUsize::new(0),
-            is_resizing: Mutex::new(false),
-            resizing_cv: Condvar::new(),
-            is_printing: Mutex::new(false),
-            printing_cv: Condvar::new()
-        }
+            is_migrating: AtomicBool::new(false)
+        };
     }
 
     pub fn new_defaulted(capacity: usize) -> Self {
@@ -118,8 +131,20 @@ impl ConcurrentEmployeeSalaryMap
 // Commands
 impl ConcurrentEmployeeSalaryMap
 {
-    pub fn inserted(context: Command) {
-        println!()
+    pub fn insert(&self, key: &String, salary: u32, priority: u32) -> Option<u32> {
+        todo!()
+    }
+
+    pub fn delete(&self, key: &String, priority: u32) -> Option<u32> {
+        todo!()
+    }
+
+    pub fn search(&self, key: &String, priority: u32) -> Option<u32> {
+        todo!()
+    }
+    
+    pub fn print(&self, priority: u32) {
+        todo!()
     }
 }
 
@@ -134,19 +159,7 @@ impl ConcurrentEmployeeSalaryMap
         return self.size.load(Ordering::Relaxed);
     }
 
-    fn active_threads(&self) -> bool {
-        return self.active_threads.load(Ordering::Relaxed) > 1;
-    }
-
     fn compress(&self, hash: u32) -> usize {
         return (hash % self.capacity() as u32) as usize;
-    }
-
-    fn increment_active_threads(&self) {
-        self.active_threads.fetch_add(1, Ordering::SeqCst);
-    }
-
-    fn decrement_active_threads(&self) {
-        self.active_threads.fetch_sub(1, Ordering::SeqCst);
     }
 }

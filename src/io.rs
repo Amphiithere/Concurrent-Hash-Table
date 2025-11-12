@@ -22,6 +22,15 @@ impl Command
         };
     }
 
+    pub fn name_ref(&self) -> Option<&String> {
+        return match self {
+            Command::Insert { name, .. } |
+            Command::Delete { name, .. } |
+            Command::Search { name, .. } => Some(name),
+            _ => None
+        }
+    }
+
     pub fn salary(&self) -> Option<u32> {
         return match self {
             Command::Insert { salary, .. } => Some(*salary),

@@ -1,0 +1,8 @@
+docs_list_title: Navigation
+docs:
+
+- title: Project Overview
+  url: index.html
+
+- title: Documentation Hub
+  url: documentation.html

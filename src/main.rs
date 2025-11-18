@@ -1,22 +1,20 @@
-use crate::io::{collect_commands, Command};
+use crate::commands_io::{collect_commands, Command};
 use crate::map::ConcurrentEmployeeSalaryMap as Map;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod hashing;
-mod io;
+mod commands_io;
 mod map;
 mod primes;
-mod testing;
+mod utilities;
 
 fn main()
 {
-    // testing::run();
     let (commands, inserts) = collect_commands();
-    let hashmap = Map::new_defaulted(
-        (inserts as f64 * 2.0) as usize
-    );
+    let capacity = primes::search_closest_larger(inserts as u32 * 2);
+    let hashmap = Map::new_defaulted(capacity as usize);
     spawn_threads(commands, hashmap);
 }
 
@@ -29,40 +27,42 @@ pub fn current_timestamp() -> u64 {
         .as_micros() as u64;
 }
 
-fn spawn_threads(commands: Vec<Command>, hashmap: Map)
+fn spawn_threads(mut commands: Vec<Command>, hashmap: Map)
 {
-    let n = commands.len();
-    // Shadowed
-    let commands = Arc::new(commands);
+    commands.reverse();
     let hashmap = Arc::new(hashmap);
 
     // Scheduling ordering
-    let mutex = Arc::new(Mutex::new(commands[0].priority()));
+    let first = if let Some(first) = commands.last() {
+        first.priority()
+    } else {
+        u32::MAX // Empty commands
+    };
+    let mutex = Arc::new(Mutex::new(first));
     let cv = Arc::new(Condvar::new());
 
-    // Spawn loop
-    let mut handles = vec![];
-    for i in 0..n
+    // Collect the handles so the main thread can wait on these threads
+    let capacity = commands.len() + 1;
+    let mut handles = Vec::with_capacity(capacity);
+
+    // Thread spawning loop
+    while let Some(command) = commands.pop()
     {
-        // Increment the reference counters to keep the references alive
-        // between individual loop iteration scopes. Since in Rust, each
-        // iteration is its own-owned scope
-        let commands = Arc::clone(&commands);
-        let hashmap = Arc::clone(&hashmap);
-        let mutex = Arc::clone(&mutex);
-        let cv = Arc::clone(&cv);
+        // Increment reference counters for the loop iteration scope
+        let hashmap = hashmap.clone();
+        let mutex = mutex.clone();
+        let cv = cv.clone();
+
+        // The next priority thread to be scheduled
+        let next: u32 = if let Some(next) = commands.last() {
+            next.priority()
+        } else {
+            u32::MAX // Last command has no next
+        };
 
         // Spawn thread with scoped data
         let handle = thread::spawn(move || {
-            // Current command being parsed
-            let command = &commands[i];
-
-            // The next priority thread to be scheduled
-            let next: u32 = if i < n - 1 {
-                commands[i + 1].priority()
-            } else {
-                u32::MAX // Case for the last thread
-            };
+            let priority = command.priority();
 
             // Enforce ordered scheduling using conditional variables
             let mut ordering = mutex.lock().unwrap();
@@ -78,13 +78,19 @@ fn spawn_threads(commands: Vec<Command>, hashmap: Map)
             // ====================================================================================
             match command {
                 Command::Insert { name, salary, priority } => {
-                    hashmap.insert(name, *salary, *priority);
+                    hashmap.insert(name, salary, priority);
+                }
+                Command::Update { name, salary, priority } => {
+                    hashmap.update(name, salary, priority);
                 }
                 Command::Delete { name, priority } => {
+                    hashmap.delete(name, priority);
                 }
                 Command::Search { name, priority } => {
+                    hashmap.search(name, priority);
                 }
                 Command::Print { priority } => {
+                    hashmap.print(priority);
                 }
             }
             // ====================================================================================

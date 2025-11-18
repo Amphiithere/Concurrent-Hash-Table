@@ -6,6 +6,7 @@ use std::{env, fmt};
 pub enum Command
 {
     Insert { name: String, salary: u32, priority: u32 },
+    Update { name: String, salary: u32, priority: u32 },
     Delete { name: String, priority: u32 },
     Search { name: String, priority: u32 },
     Print { priority: u32 }
@@ -16,6 +17,7 @@ impl Command
     pub fn name(&self) -> Option<String> {
         return match self {
             Command::Insert { name, .. } |
+            Command::Update { name, .. } |
             Command::Delete { name, .. } |
             Command::Search { name, .. } => Some(name.clone()),
             _ => None
@@ -25,6 +27,7 @@ impl Command
     pub fn name_ref(&self) -> Option<&String> {
         return match self {
             Command::Insert { name, .. } |
+            Command::Update { name, .. } |
             Command::Delete { name, .. } |
             Command::Search { name, .. } => Some(name),
             _ => None
@@ -33,7 +36,8 @@ impl Command
 
     pub fn salary(&self) -> Option<u32> {
         return match self {
-            Command::Insert { salary, .. } => Some(*salary),
+            Command::Insert { salary, .. } |
+            Command::Update { salary, .. } => Some(*salary),
             _ => None
         };
     }
@@ -41,6 +45,7 @@ impl Command
     pub fn priority(&self) -> u32 {
         return match self {
             Command::Insert { priority, .. } |
+            Command::Update { priority, .. } |
             Command::Delete { priority, .. } |
             Command::Search { priority, .. } |
             Command::Print { priority, .. } => *priority
@@ -55,6 +60,9 @@ impl fmt::Display for Command
         return match self {
             Command::Insert { name, salary, priority } => {
                 write!(f, "insert,{},{},{}", name, salary, priority)
+            }
+            Command::Update { name, salary, priority } => {
+                write!(f, "update,{},{},{}", name, salary, priority)
             }
             Command::Delete { name, priority } => {
                 write!(f, "delete,{},{}", name, priority)
@@ -131,7 +139,7 @@ pub fn collect_commands() -> (Vec<Command>, usize)
 fn compile_command(cmd: String) -> Option<Command>
 {
     let mut components = cmd.split(',').map(|s| s.trim());
-    let operation = components.next().expect("unknown split-error");
+    let operation = components.next().expect("unknown split error");
 
     // Define the macro with a name
     macro_rules! expect_parameter {
@@ -179,14 +187,27 @@ fn compile_command(cmd: String) -> Option<Command>
 
     match operation
     {
-        "insert" => {
+        // Just consume "threads,<count>,<int>", since the way command are
+        // parsed doesn't need it
+        "threads" => {
+            expect_parameter!("count");
+            expect_parameter!("unknown");
+            return None;
+        }
+
+        "insert" | "update" => {
+            // Split and unwrap next returns &str, so convert into String
             let name = expect_parameter!("name").to_string();
             let salary = expect_parameter!("salary");
             let priority = expect_parameter!("priority");
             // Shadowing
             let salary = parse_u32!(salary, "salary");
             let priority = parse_u32!(priority, "priority");
-            return Some(Command::Insert { name, salary, priority });
+            return match operation {
+                "insert" => Some(Command::Insert { name, salary, priority }),
+                "update" => Some(Command::Update { name, salary, priority }),
+                _ => unreachable!()
+            }
         }
 
         "delete" | "search" => {
@@ -194,10 +215,10 @@ fn compile_command(cmd: String) -> Option<Command>
             let priority = expect_parameter!("priority");
             // Shadowing
             let priority = parse_u32!(priority, "priority");
-            return if operation == "delete" {
-                Some(Command::Delete { name, priority })
-            } else {
-                Some(Command::Search { name, priority })
+            return match operation {
+                "delete" => Some(Command::Delete { name, priority }),
+                "search" => Some(Command::Search { name, priority }),
+                _ => unreachable!()
             };
         }
 
@@ -219,6 +240,7 @@ fn compile_command(cmd: String) -> Option<Command>
                 Unknown command: '{}'
                 Valid commands:
                     insert,<name>,<salary>,<priority>
+                    update,<name>,<salary>,<priority>
                     delete,<name>,<priority>
                     search,<name>,<priority>
                     print,<priority>
@@ -235,6 +257,7 @@ fn compile_command(cmd: String) -> Option<Command>
 fn expected_format(op: &str) -> &'static str {
     return match op {
         "insert" => "insert,<name>,<salary>,<priority>",
+        "update" => "update,<name>,<salary>,<priority>",
         "delete" => "delete,<name>,<priority>",
         "search" => "search,<name>,<priority>",
         "print" => "print,<priority>",

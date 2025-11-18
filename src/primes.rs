@@ -6,14 +6,17 @@ pub fn search_closest_larger(target: u32) -> u32
         // Unpack the contained position as the variable 'index'
         Ok(index) => PRIMES[index], // Returns the exact index of the target
         Err(index) => {
-            let n = PRIMES.len();
-            if index >= n { PRIMES[n - 1] } else { PRIMES[index] }
+            if index >= LENGTH { PRIMES[MAX_INDEX] } else { PRIMES[index] }
         }
     }
 }
 
+pub const MAX_PRIME: u32 = PRIMES[PRIMES.len() - 1];
+pub const LENGTH: usize = PRIMES.len();
+pub const MAX_INDEX: usize = LENGTH - 1;
+
 pub fn exceeds_largest(target: u32) -> bool {
-    return target > PRIMES[PRIMES.len() - 1];
+    return target > MAX_PRIME;
 }
 
 /// The first 10,000 primes.

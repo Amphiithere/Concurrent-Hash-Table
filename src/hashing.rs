@@ -14,12 +14,12 @@ use std::num::Wrapping;
 /// let hash = hashing::one_at_a_time("The quick brown fox jumps over the lazy dog");
 /// assert_eq!(hash, 0x519e91f5 /* hash of above input */);
 /// ```
-pub fn one_at_a_time<T: Into<String>>(string: T) -> u32
+pub fn one_at_a_time(string: &str) -> u32
 {
     // Permits integer overflow in computations
     let mut hash = Wrapping(0);
 
-    for &byte in string.into().as_bytes()
+    for &byte in string.as_bytes()
     {
         hash += byte as u32;
         hash += hash << 10;

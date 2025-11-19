@@ -2,7 +2,7 @@ docs_list_title: Navigation
 docs:
 
 - title: Project Overview
-  url: index.html
+  url: /
 
 - title: Documentation Hub
-  url: documentation.html
+  url: documentation

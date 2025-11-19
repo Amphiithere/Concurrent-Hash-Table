@@ -17,9 +17,17 @@
         <a id="a-title">
           <h1>Documentation Hub</h1>
         </a>
-        <h2>{{ site.description | default: site.github.project_tagline }}</h2>
       </div>
     </header>
+
+    <div>
+      <h2>{{ site.data.navlist.docs_list_title }}</h2>
+      <ul>
+        {% for item in site.data.navlist.docs %}
+          <li><a href="{{ item.url }}">{{ item.title }}</a></li>
+        {% endfor %}
+      </ul>
+    </div>
 
     <div class="container">
       <section id="main_content">

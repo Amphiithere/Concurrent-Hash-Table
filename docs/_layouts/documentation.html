@@ -5,6 +5,7 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="{{ '/assets/css/style.css?v=' | append: site.github.build_revision | relative_url }}">
+    <link rel="stylesheet" href="{{ '/assets/css/userStyle.css' | relative_url }}">
     {% include head-custom.html %}
 
 {% seo %}
@@ -20,13 +21,15 @@
       </div>
     </header>
 
-    <div>
-      <h2>{{ site.data.navlist.docs_list_title }}</h2>
-      <ul>
-        {% for item in site.data.navlist.docs %}
-          <li><a href="{{ item.url }}">{{ item.title }}</a></li>
-        {% endfor %}
-      </ul>
+    <div id="navSidebar" class="sidenav">
+      <div id="navContainer" class="container">
+        <h2 id="navHeader">{{ site.data.navlist.docs_list_title }}</h2>
+        <ul>
+          {% for item in site.data.navlist.docs %}
+            <li><a href="{{ item.link }}">{{ item.title }}</a></li>
+          {% endfor %}
+        </ul>
+      </div>
     </div>
 
     <div class="container">

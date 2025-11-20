@@ -1,8 +1,14 @@
-docs_list_title: Navigation
+docs_list_title: Table of Contents
 docs:
 
-- title: Project Overview
-  url: "index.html"
+- title: Prerequisites
+  link: "#prerequisites"
 
-- title: Documentation Hub
-  url: documentation
+- title: Installation
+  link: "#installation"
+
+- title: Usage
+  link: "#usage"
+
+- title: Authors
+  link: "#authors"

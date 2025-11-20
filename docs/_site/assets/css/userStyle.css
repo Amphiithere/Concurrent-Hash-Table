@@ -1,24 +1,15 @@
 /* user-defined styles go here
 this is to separate user and theme CSS */
 .sidenav {
-  height: 100%;
-  width: 0;
+  width: 13%;
   position: fixed;
   z-index: 1; /* Stay on top */
-  top: 0;
-  left: 0;
-  background-color: #111;
+  top: 10%;
+  left: 10px;
+  background-color: rgb(37, 37, 37);
   overflow-x: hidden;
-  padding-top: 60px;
-  transition: 0.5s;
+  padding: 1% 1% 1% 0;
+  text-align: center;
 }
 
 /* change navbar text formatting(?) */
-
-.sidenav .closebtn {
-  position: absolute;
-  top: 0;
-  right: 25px;
-  font-size: 36px;
-  margin-left: 50px;
-}

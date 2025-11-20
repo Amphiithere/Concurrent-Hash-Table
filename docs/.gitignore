@@ -1,4 +1,9 @@
-_site
+_site/*
+!_site/assets
+_site/assets/css/*
+!_site/assets/css/userStyle.css
+!_site/assets/js/
+_site/assets/images
 .sass-cache
 .jekyll-cache
 .jekyll-metadata

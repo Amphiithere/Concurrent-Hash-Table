@@ -25,6 +25,11 @@ baseurl: "/Concurrent-Hash-Table" # the subpath of your site, e.g. /blog
 url: "" # the base hostname & protocol for your site, e.g. http://example.com
 github_username:  Amphiithere
 
+# jekyll will drop the file if this is remove, fix is in TODO
+keep_files:
+  - assets/css/userStyle.css
+  - assets/js/navBar.js
+
 # Build settings
 theme: jekyll-theme-hacker
 plugins:

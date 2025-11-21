@@ -24,11 +24,9 @@
     <div id="navSidebar" class="sidenav">
       <div id="navContainer" class="container">
         <h2 id="navHeader">{{ site.data.navlist.docs_list_title }}</h2>
-        <ul>
           {% for item in site.data.navlist.docs %}
-            <li><a href="{{ item.link }}">{{ item.title }}</a></li>
+            <h3><a href="{{ item.link }}">{{ item.title }}</a></h3>
           {% endfor %}
-        </ul>
       </div>
     </div>
 

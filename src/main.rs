@@ -5,7 +5,6 @@ use crate::map::ConcurrentEmployeeSalaryMap as Map;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::Duration;
-use crate::utilities::current_timestamp;
 
 mod hashing;
 mod command_io;
@@ -113,12 +112,11 @@ fn spawn_threads(mut commands: Vec<Command>, hashmap: Map)
 
     // Final Outputs
     thread::sleep(Duration::from_millis(321));
+    // Non-threaded
     hashmap.logger().log_lock_counts();
-    let borrowed_map = Arc::clone(&hashmap);
-    borrowed_map._internal_log_database();
-    thread::sleep(Duration::from_millis(321));
+    let entries = hashmap.log_final_database();
     hashmap.logger().print_outputs();
     hashmap.logger().write_log();
-    thread::sleep(Duration::from_millis(321));
-    println!("size: {}", hashmap.size());
+    println!("Number of Entries: {}", hashmap.size());
+    hashmap.logger().print_final_table(entries);
 }

@@ -382,41 +382,34 @@ impl ConcurrentEmployeeSalaryMap
         self.logger.print_database(Arc::clone(&buffer), time);
     }
 
-    pub fn _internal_log_database(&self) {
-        // Multithreaded logging
-        let time = utilities::current_timestamp();
+    pub fn log_final_database(&self) -> Arc<Vec<String>> {
+
         // We're basically storing a snapshot of the database
-        let buffer = Arc::new(Mutex::new(
-            LinkedList::<(u32, Arc<String>, u32)>::new()
-        ));
+        let mut buffer: LinkedList<(u32, String)> = LinkedList::new();
 
         // Bucket Accessing
         let backing = Arc::clone(&self.backing);
         for i in 0..self.capacity() {
             // For each bucket check its records (if any)
             let bucket = backing.vector[i].read().unwrap();
-            let buffer = Arc::clone(&buffer);
 
             // Read the records in the bucket (if any)
             let mut current = Option::clone(&bucket.entries);
             while let Some(record) = current {
-                // Record the necessary information for the printing
-                let hash = record.hash;
-                let name = Arc::clone(&record.name);
-                let salary = record.salary;
-                let buffer = Arc::clone(&buffer);
-                thread::spawn(move || {
-                    let entry = (hash, name, salary);
-                    let mut lock = buffer.lock().unwrap();
-                    lock.push_back(entry);
-                    drop(lock);
-                });
+                // Create entry and enter
+                let entry = format!("{},{},{}", record.hash, record.name, record.salary);
+                buffer.push_back((record.hash, entry));
                 current = Option::clone(&record.next);
             }
         }
 
         // Process the buffer
-        self.logger.log_final_table(Arc::clone(&buffer));
+        let mut entries: Vec<_> = buffer.into_iter().collect();
+        entries.sort_by_key(|x| x.0); // Sort by hash
+        let entries: Vec<String> = entries.into_iter().map(|x| x.1).collect();
+        let entries = Arc::new(entries);
+        self.logger.log_final_table(Arc::clone(&entries));
+        entries
     }
 }
 

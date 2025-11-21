@@ -410,51 +410,44 @@ impl Logger
     }
 
     pub fn log_lock_counts(&self) {
-        let time = utilities::current_timestamp();
+        let time = u64::MAX - 1;
         let queue = Arc::clone(&self.file_io);
-        thread::spawn(move || {
-            let newline = (time, String::from(""));
-            let mut lock = queue.lock().unwrap();
-            lock.queue.push_back(newline);
-            let acquired = lock.locks_acquired;
-            let released = lock.locks_released;
-            lock.queue.push_back((
-                time, format!("Number of lock acquisitions: {}", acquired),
-            ));
-            lock.queue.push_back((
-                time, format!("Number of locks released: {}", released),
-            ));
-            drop(lock);
-        });
+
+        // Non-Threaded
+        // Ran by main thread
+        let newline = (time, String::from(""));
+        let mut lock = queue.lock().unwrap();
+        lock.queue.push_back(newline);
+        let acquired = lock.locks_acquired;
+        let released = lock.locks_released;
+        lock.queue.push_back((
+            time, format!("Number of lock acquisitions: {}", acquired),
+        ));
+        lock.queue.push_back((
+            time, format!("Number of locks released: {}", released),
+        ));
+        drop(lock);
     }
 
-    pub fn log_final_table(&self, database: Arc<Mutex<LinkedList<(u32, Arc<String>, u32)>>>) {
-        let time = utilities::current_timestamp();
+    pub fn log_final_table(&self, entries: Arc<Vec<String>>) {
+        let time = u64::MAX;
         let queue = Arc::clone(&self.file_io);
-        thread::spawn(move || {
-            // Sort entries by hashcode
-            let snapshot = database.lock().unwrap();
-            let mut elements: Vec<_> = snapshot.iter().collect();
-            elements.sort_by_key(|x| x.0);
-
-            // Prepare to insert into the buffer
-            let mut lock = queue.lock().unwrap();
-            let header = (time, String::from("Final Table:"));
-            lock.queue.push_back(header);
-            drop(lock);
-
-            // Enter entries corresponding to the print command snapshot
-            for (hash, name, salary) in &elements {
-                let msg = format!(
-                    "{},{},{}",
-                    hash, name, salary
-                );
-                let entry = (time, msg);
-                let mut lock = queue.lock().unwrap();
-                lock.queue.push_back(entry);
-                drop(lock);
-            }
-            drop(snapshot);
-        });
+        let n = entries.len();
+        let mut lock  = queue.lock().unwrap();
+        lock.queue.push_back((time, String::from("Final Table:")));
+        for i in 0..n {
+            let entry = &entries[i];
+            lock.queue.push_back((time, entry.clone()));
+        }
+        drop(lock);
+    }
+    
+    pub fn print_final_table(&self, entries: Arc<Vec<String>>) {
+        let n = entries.len();
+        println!("Final Table:");
+        for i in 0..n {
+            let entry = &entries[i];
+            println!("{}", entry);
+        }
     }
 }

@@ -14,42 +14,33 @@ pub enum Command
 
 impl Command
 {
-    pub fn name(&self) -> Option<String> {
-        return match self {
-            Command::Insert { name, .. } |
-            Command::Update { name, .. } |
-            Command::Delete { name, .. } |
-            Command::Search { name, .. } => Some(name.clone()),
-            _ => None
-        };
-    }
-
-    pub fn name_ref(&self) -> Option<&String> {
-        return match self {
-            Command::Insert { name, .. } |
-            Command::Update { name, .. } |
-            Command::Delete { name, .. } |
-            Command::Search { name, .. } => Some(name),
-            _ => None
+    fn expected_format(operation: &str) -> &'static str {
+        match operation {
+            "insert" => "insert,<name>,<salary>,<priority>",
+            "update" => "update,<name>,<salary>,<priority>",
+            "delete" => "delete,<name>,<priority>",
+            "search" => "search,<name>,<priority>",
+            "print" => "print,<priority>",
+            _ => unreachable!(),
         }
     }
 
-    pub fn salary(&self) -> Option<u32> {
-        return match self {
-            Command::Insert { salary, .. } |
-            Command::Update { salary, .. } => Some(*salary),
-            _ => None
-        };
+    fn commands() -> &'static str {
+        r#"    insert,<name>,<salary>,<priority>
+                    update,<name>,<salary>,<priority>
+                    delete,<name>,<priority>
+                    search,<name>,<priority>
+                    print,<priority>"#
     }
 
     pub fn priority(&self) -> u32 {
-        return match self {
+        match self {
             Command::Insert { priority, .. } |
             Command::Update { priority, .. } |
             Command::Delete { priority, .. } |
             Command::Search { priority, .. } |
             Command::Print { priority, .. } => *priority
-        };
+        }
     }
 }
 
@@ -57,7 +48,7 @@ impl fmt::Display for Command
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
     {
-        return match self {
+        match self {
             Command::Insert { name, salary, priority } => {
                 write!(f, "insert,{},{},{}", name, salary, priority)
             }
@@ -73,7 +64,7 @@ impl fmt::Display for Command
             Command::Print { priority } => {
                 write!(f, "print,{}", priority)
             }
-        };
+        }
     }
 }
 
@@ -109,7 +100,7 @@ fn open_commands_file_with_buffered_reader() -> io::Result<io::Lines<io::BufRead
     // ? operator suffixing the function call makes it so that it
     // immediately returns an 'Err(...)' if something goes wrong
     let file = File::open(path)?;
-    return Ok(io::BufReader::new(file).lines())
+    Ok(io::BufReader::new(file).lines())
 }
 
 pub fn collect_commands() -> (Vec<Command>, usize)
@@ -133,7 +124,7 @@ pub fn collect_commands() -> (Vec<Command>, usize)
         }
     }
     commands.sort_unstable_by_key(|c| c.priority());
-    return (commands, inserts);
+    (commands, inserts)
 }
 
 fn compile_command(cmd: String) -> Option<Command>
@@ -154,7 +145,7 @@ fn compile_command(cmd: String) -> Option<Command>
                     Given: {}
                     "#,
                     $parameter,
-                    expected_format(operation),
+                    Command::expected_format(operation),
                     cmd
                 )
             })
@@ -178,10 +169,23 @@ fn compile_command(cmd: String) -> Option<Command>
                     "#,
                     $parameter,
                     $value,
-                    expected_format(operation),
+                    Command::expected_format(operation),
                     cmd
                 )
             })
+        };
+    }
+
+    // Consumes padding zeros
+    macro_rules! consume_padding {
+        () => {
+            components.next()
+        };
+
+        ($count:literal) => {
+            for _ in 0..$count {
+                components.next();
+            }
         };
     }
 
@@ -191,8 +195,8 @@ fn compile_command(cmd: String) -> Option<Command>
         // parsed doesn't need it
         "threads" => {
             expect_parameter!("count");
-            expect_parameter!("unknown");
-            return None;
+            consume_padding!();
+            None
         }
 
         "insert" | "update" => {
@@ -203,7 +207,7 @@ fn compile_command(cmd: String) -> Option<Command>
             // Shadowing
             let salary = parse_u32!(salary, "salary");
             let priority = parse_u32!(priority, "priority");
-            return match operation {
+            match operation {
                 "insert" => Some(Command::Insert { name, salary, priority }),
                 "update" => Some(Command::Update { name, salary, priority }),
                 _ => unreachable!()
@@ -212,21 +216,23 @@ fn compile_command(cmd: String) -> Option<Command>
 
         "delete" | "search" => {
             let name = expect_parameter!("name").to_string();
+            consume_padding!();
             let priority = expect_parameter!("priority");
             // Shadowing
             let priority = parse_u32!(priority, "priority");
-            return match operation {
+            match operation {
                 "delete" => Some(Command::Delete { name, priority }),
                 "search" => Some(Command::Search { name, priority }),
                 _ => unreachable!()
-            };
+            }
         }
 
         "print" => {
+            consume_padding!(2);
             let priority = expect_parameter!("priority");
             // Shadowing
             let priority = parse_u32!(priority, "priority");
-            return Some(Command::Print { priority });
+            Some(Command::Print { priority })
         }
 
         // "_" is what "default" would be in a C switch-case expression
@@ -235,32 +241,19 @@ fn compile_command(cmd: String) -> Option<Command>
             if operation.is_empty() {
                 return None;
             }
+
             panic!(
                 r#"
                 Unknown command: '{}'
                 Valid commands:
-                    insert,<name>,<salary>,<priority>
-                    update,<name>,<salary>,<priority>
-                    delete,<name>,<priority>
-                    search,<name>,<priority>
-                    print,<priority>
+                {}
 
-                Given: {}
+                Given: '{}'
                 "#,
                 operation,
+                Command::commands(),
                 cmd
             )
         }
     }
-}
-
-fn expected_format(op: &str) -> &'static str {
-    return match op {
-        "insert" => "insert,<name>,<salary>,<priority>",
-        "update" => "update,<name>,<salary>,<priority>",
-        "delete" => "delete,<name>,<priority>",
-        "search" => "search,<name>,<priority>",
-        "print" => "print,<priority>",
-        _ => "<not-applicable>",
-    };
 }

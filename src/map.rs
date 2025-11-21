@@ -1,32 +1,46 @@
-use crate::primes;
-use std::ptr;
-use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
-use std::sync::{Arc, RwLock};
+use std::collections::LinkedList;
+use crate::logging::Logger;
+use crate::{hashing, utilities};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
+use std::thread;
 
 struct HashRecord
 {
     hash: u32,
-    name: String,
+    name: Arc<String>,
     salary: u32,
-    next: Option<Arc<HashRecord>>
+    next: Option<Arc<Self>>
 }
 
 impl HashRecord
 {
-    pub fn new(hash: u32, name: String, salary: u32) -> Self {
-        return Self {
+    pub fn new(hash: u32, name: Arc<String>, salary: u32) -> Self {
+        Self {
             hash,
             name,
             salary,
             next: None
-        };
+        }
     }
 }
 
 impl HashRecord
 {
+    // This is OK in the context of a writer lock being held for bucket access, since the
+    // access WILL be exclusive to that thread. And the records are protected by the
+    // buckets write lock.
+    //
+    // This is NOT safe to use for a reader lock (and should never need to be used by one)
+    unsafe fn update_salary(&self, new_salary: u32) -> u32 {
+        let old_salary = self.salary;
+        let pointer = self as *const _ as *mut HashRecord;
+        (*pointer).salary = new_salary;
+        old_salary
+    }
+
     fn has_next(&self) -> bool {
-        return self.next.is_some();
+        self.next.is_some()
     }
 }
 
@@ -40,7 +54,7 @@ pub struct Bucket
 impl Bucket
 {
     fn new() -> Self {
-        return Self {
+        Self {
             entries: None
         }
     }
@@ -49,11 +63,7 @@ impl Bucket
 impl Bucket
 {
     fn is_empty(&self) -> bool {
-        return self.entries.is_none();
-    }
-
-    fn is_chained(&self) -> bool {
-        return self.entries.is_some() && self.entries.as_ref().unwrap().has_next();
+        self.entries.is_none()
     }
 }
 
@@ -71,9 +81,9 @@ impl Backing
         for _ in 0..capacity {
             vector.push(RwLock::new(Bucket::new()));
         }
-        return Self {
+        Self {
             vector
-        };
+        }
     }
 }
 
@@ -81,73 +91,332 @@ impl Backing
 
 pub struct ConcurrentEmployeeSalaryMap
 {
-    // Attributes
-    migrating: Arc<AtomicPtr<Backing>>,
-    backing: Arc<AtomicPtr<Backing>>,
+    logger: Arc<Logger>,
+    // Core
+    backing: Arc<Backing>,
     capacity: AtomicUsize,
-    size: AtomicUsize,
-    threshold: f32,
-    scaling: f32,
-    is_resizing: AtomicBool,
-    is_migrating: AtomicBool,
+    size: AtomicUsize
 }
 
 // Constructing
 impl ConcurrentEmployeeSalaryMap
 {
-    pub fn new(capacity: usize, threshold: f32, scaling: f32) -> Self
+    fn backing(capacity: usize) -> Arc<Backing> {
+        Arc::new(Backing::new(capacity))
+    }
+
+    pub fn new_fixed_size(capacity: usize) -> Self
     {
-        if capacity <= 0 {
-            panic!("Initial capacity must be greater than 0");
-        }
-
-        let initial_backing = Arc::new(Backing::new(capacity));
-        let pointer = Arc::into_raw(initial_backing) as *mut Backing;
-        let atomic = Arc::new(AtomicPtr::new(pointer));
-
-        // 'initial_backing'
-        return Self {
-            migrating: Arc::new(AtomicPtr::new(ptr::null_mut())),
-            backing: atomic,
+        Self {
+            logger: Arc::new(Logger::new()),
+            // Core
+            backing: Self::backing(capacity),
             capacity: AtomicUsize::new(capacity),
-            size: AtomicUsize::new(0),
-            threshold,
-            scaling,
-            is_resizing: AtomicBool::new(false),
-            is_migrating: AtomicBool::new(false)
-        };
-    }
-
-    pub fn new_defaulted(capacity: usize) -> Self {
-        return Self::new(capacity, 0.75, 2.0);
-    }
-
-    pub fn new_fixed_size(capacity: usize) -> Self {
-        return Self::new(capacity, f32::INFINITY, 2.0);
+            size: AtomicUsize::new(0)
+        }
     }
 }
 
 // Commands
 impl ConcurrentEmployeeSalaryMap
 {
-    pub fn insert(&self, key: String, salary: u32, priority: u32) -> Option<u32> {
-        todo!()
+    pub fn insert(&self, key: String, salary: u32, priority: u32) {
+        // Internal reference counter
+        let key = Arc::new(key);
+        let borrowed_key = Arc::clone(&key);
+
+        // Hash computation
+        let hash = hashing::one_at_a_time(&*key);
+        self.logger.log_insert(Arc::clone(&borrowed_key), salary, priority, hash);
+        let mut insertion = HashRecord::new(hash, key, salary);
+
+        // Resolve bucket
+        let backing = Arc::clone(&self.backing);
+        let index = self.compress(hash);
+
+        // Writer lock acquisition
+        let mut bucket = backing.vector[index].write().unwrap();
+        self.logger.log_write_lock_acquired(priority);
+        if bucket.is_empty() {
+            bucket.entries = Some(Arc::new(insertion));
+            self.logger.print_insert(hash, borrowed_key, salary);
+            self.size.fetch_add(1, Ordering::SeqCst);
+            drop(bucket);
+            self.logger.log_write_lock_released(priority);
+            return;
+        }
+
+        // Search for duplicate
+        let mut current = Option::clone(&bucket.entries);
+        while let Some(record) = current {
+            if record.hash == hash {
+                self.logger.print_insert_failed(hash);
+                drop(bucket);
+                self.logger.log_write_lock_released(priority);
+                return;
+            }
+            current = Option::clone(&record.next);
+        }
+
+        insertion.next = bucket.entries.take();
+        bucket.entries = Some(Arc::new(insertion));
+        self.logger.print_insert(hash, borrowed_key, salary);
+        self.size.fetch_add(1, Ordering::SeqCst);
+        drop(bucket);
+        self.logger.log_write_lock_released(priority);
     }
 
     pub fn update(&self, key: String, salary: u32, priority: u32) -> Option<u32> {
-        todo!()
+        // Internal reference counter
+        let key = Arc::new(key);
+        let borrowed_key = Arc::clone(&key);
+
+        // Hash computation
+        let hash = hashing::one_at_a_time(&*key);
+        self.logger.log_update(Arc::clone(&borrowed_key), salary, priority, hash);
+
+        // Resolve bucket
+        let backing = Arc::clone(&self.backing);
+        let index = self.compress(hash);
+
+        // Writer lock acquisition
+        let mut bucket = backing.vector[index].write().unwrap();
+        self.logger.log_write_lock_acquired(priority);
+        if bucket.is_empty() {
+            self.logger.print_update_failed(hash);
+            drop(bucket);
+            self.logger.log_write_lock_released(priority);
+            return None;
+        }
+
+        // Search for entry
+        let mut current = Option::clone(&bucket.entries);
+        while let Some(mut record) = current {
+            if record.hash == hash {
+                let old_salary = unsafe {
+                    record.update_salary(salary)
+                };
+                self.logger.print_update(hash, borrowed_key, old_salary, hash);
+                drop(bucket);
+                self.logger.log_write_lock_released(priority);
+                return Some(old_salary);
+            }
+            current = Option::clone(&record.next);
+        }
+
+        // Bucket did not contain the entry
+        self.logger.print_update_failed(hash);
+        drop(bucket);
+        self.logger.log_write_lock_released(priority);
+        None
     }
 
     pub fn delete(&self, key: String, priority: u32) -> Option<u32> {
-        todo!()
+        // Internal reference counter
+        let key = Arc::new(key);
+        let borrowed_key = Arc::clone(&key);
+
+        // Hash computation
+        let hash = hashing::one_at_a_time(&*key);
+        self.logger.log_delete(Arc::clone(&borrowed_key), priority, hash);
+
+        // Resolve bucket
+        let backing = Arc::clone(&self.backing);
+        let index = self.compress(hash);
+
+        // Writer lock acquisition
+        let mut bucket = backing.vector[index].write().unwrap();
+        self.logger.log_write_lock_acquired(priority);
+        if bucket.is_empty() {
+            self.logger.print_delete_failed(hash);
+            drop(bucket);
+            self.logger.log_write_lock_released(priority);
+            return None;
+        }
+
+        // Manually work with the buckets entries
+        let chain = bucket.entries.take();
+        let head = chain.as_ref().unwrap();
+
+        // Check if the head is the record to delete
+        if head.hash == hash {
+            let salary = head.salary;
+            bucket.entries = Option::clone(&head.next);
+            self.logger.print_delete(hash, borrowed_key, salary);
+            self.size.fetch_sub(1, Ordering::SeqCst);
+            drop(bucket);
+            self.logger.log_write_lock_released(priority);
+            return Some(salary);
+        }
+
+        // By this point, since the head is NOT the record to delete, check if it is
+        // chained with more entries, if not then deletion fails
+        if head.next.is_none() {
+            self.logger.print_delete_failed(hash);
+            bucket.entries = chain;
+            drop(bucket);
+            self.logger.log_write_lock_released(priority);
+            return None;
+        }
+
+        // Search for if the record is somewhere within the chaining
+        let mut previous = Arc::as_ptr(head) as *mut HashRecord;
+        let next = Option::as_ref(&head.next).unwrap();
+        let mut current = Arc::as_ptr(next) as *mut HashRecord;
+
+        // Use raw pointers to manually manipulate the chain structure
+        // Safe due to exclusive ownership by the thread claiming a writer lock
+        loop {
+            unsafe {
+                let record = &*current;
+
+                if record.hash == hash {
+                    let salary = record.salary;
+                    (*previous).next = Option::clone(&record.next);
+                    bucket.entries = chain;
+                    self.logger.print_delete(hash, borrowed_key, salary);
+                    self.size.fetch_sub(1, Ordering::SeqCst);
+                    drop(bucket);
+                    self.logger.log_write_lock_released(priority);
+                    return Some(salary);
+                }
+
+                // Update pointers
+                previous = current;
+                current = if let Some(ref next) = record.next {
+                    Arc::as_ptr(next) as *mut HashRecord
+                } else {
+                    break;
+                }
+            }
+        }
+
+        // Bucket did not contain the entry
+        bucket.entries = chain; // Restore bucket
+        self.logger.print_delete_failed(hash);
+        drop(bucket);
+        self.logger.log_write_lock_released(priority);
+        None
     }
 
     pub fn search(&self, key: String, priority: u32) -> Option<u32> {
-        todo!()
+        // Internal reference counter
+        let key = Arc::new(key);
+        let borrowed_key = Arc::clone(&key);
+
+        // Hash computation
+        let hash = hashing::one_at_a_time(&*key);
+        self.logger.log_search(Arc::clone(&borrowed_key), priority, hash);
+
+        // Resolve bucket
+        let backing = Arc::clone(&self.backing);
+        let index = self.compress(hash);
+
+        // Reader lock acquisition
+        let mut bucket = backing.vector[index].read().unwrap();
+        self.logger.log_read_lock_acquired(priority);
+        if bucket.is_empty() {
+            self.logger.print_search_failed(key);
+            drop(bucket);
+            self.logger.log_read_lock_released(priority);
+            return None;
+        }
+
+        // Search the chain if the bucket is not empty
+        let mut current = Option::clone(&bucket.entries);
+        while let Some(record) = current {
+            if record.hash == hash {
+                self.logger.print_search(hash, borrowed_key, record.salary);
+                let salary = record.salary;
+                drop(bucket);
+                self.logger.log_read_lock_released(priority);
+                return Some(salary);
+            }
+            current = Option::clone(&record.next);
+        }
+
+        // Key was not found
+        self.logger.print_search_failed(key);
+        drop(bucket);
+        self.logger.log_read_lock_released(priority);
+        None
     }
-    
+
     pub fn print(&self, priority: u32) {
-        todo!()
+        self.logger.log_print(priority);
+        // Multithreaded logging
+        let time = utilities::current_timestamp();
+        // We're basically storing a snapshot of the database
+        let buffer = Arc::new(Mutex::new(
+            LinkedList::<(u32, Arc<String>, u32)>::new()
+        ));
+
+        // Bucket Accessing
+        let backing = Arc::clone(&self.backing);
+        for i in 0..self.capacity() {
+            // For each bucket check its records (if any)
+            let bucket = backing.vector[i].read().unwrap();
+            self.logger.log_read_lock_acquired(priority);
+            let buffer = Arc::clone(&buffer);
+
+            // Read the records in the bucket (if any)
+            let mut current = Option::clone(&bucket.entries);
+            while let Some(record) = current {
+                // Record the necessary information for the printing
+                let hash = record.hash;
+                let name = Arc::clone(&record.name);
+                let salary = record.salary;
+                let buffer = Arc::clone(&buffer);
+                thread::spawn(move || {
+                    let entry = (hash, name, salary);
+                    let mut lock = buffer.lock().unwrap();
+                    lock.push_back(entry);
+                    drop(lock);
+                });
+                current = Option::clone(&record.next);
+            }
+            self.logger.log_read_lock_released(priority);
+        }
+
+        // Process the buffer
+        self.logger.print_database(Arc::clone(&buffer), time);
+    }
+
+    pub fn _internal_log_database(&self) {
+        // Multithreaded logging
+        let time = utilities::current_timestamp();
+        // We're basically storing a snapshot of the database
+        let buffer = Arc::new(Mutex::new(
+            LinkedList::<(u32, Arc<String>, u32)>::new()
+        ));
+
+        // Bucket Accessing
+        let backing = Arc::clone(&self.backing);
+        for i in 0..self.capacity() {
+            // For each bucket check its records (if any)
+            let bucket = backing.vector[i].read().unwrap();
+            let buffer = Arc::clone(&buffer);
+
+            // Read the records in the bucket (if any)
+            let mut current = Option::clone(&bucket.entries);
+            while let Some(record) = current {
+                // Record the necessary information for the printing
+                let hash = record.hash;
+                let name = Arc::clone(&record.name);
+                let salary = record.salary;
+                let buffer = Arc::clone(&buffer);
+                thread::spawn(move || {
+                    let entry = (hash, name, salary);
+                    let mut lock = buffer.lock().unwrap();
+                    lock.push_back(entry);
+                    drop(lock);
+                });
+                current = Option::clone(&record.next);
+            }
+        }
+
+        // Process the buffer
+        self.logger.log_final_table(Arc::clone(&buffer));
     }
 }
 
@@ -155,92 +424,22 @@ impl ConcurrentEmployeeSalaryMap
 impl ConcurrentEmployeeSalaryMap
 {
     pub fn capacity(&self) -> usize {
-        return self.capacity.load(Ordering::Acquire);
+        self.capacity.load(Ordering::Acquire)
     }
 
     pub fn size(&self) -> usize {
-        return self.size.load(Ordering::Acquire);
+        self.size.load(Ordering::Acquire)
     }
 }
 
 // Internals
 impl ConcurrentEmployeeSalaryMap
 {
-    // fn resize_old(&self)
-    // {
-    //     // Only allow one writer to handle resizing and migration
-    //     if self.is_resizing.compare_exchange(
-    //         false, true, Ordering::AcqRel, Ordering::Acquire
-    //     ).is_err()
-    //     {
-    //         return;
-    //     }
-    //
-    //     let migratory_capacity = self.capacity();
-    //     let mut scaled = (migratory_capacity as f32 * self.scaling) as usize;
-    //     if !primes::exceeds_largest(scaled as u32) {
-    //         scaled = primes::search_closest_larger(scaled as u32) as usize
-    //     }
-    //
-    //     // Create new backing
-    //     let new_backing = Arc::new(Backing::new(scaled));
-    //     let new_backing_pointer = Arc::into_raw(new_backing) as *mut Backing;
-    //     let migrating = self.backing.swap(new_backing_pointer, Ordering::AcqRel);
-    //
-    //     // Store the backing and related attribute data
-    //     self.capacity.store(scaled, Ordering::Release);
-    //     self.migrating.store(migrating, Ordering::Release);
-    //     self.is_migrating.store(true, Ordering::Release);
-    //
-    //     // Obtain the vector backing the old backing via raw pointer dereference
-    //     let migratory_vector: Vec<RwLock<Bucket>>;
-    //     unsafe {
-    //         migratory_vector = ptr::read(migrating).vector;
-    //     }
-    //
-    //     // Iterate each bucket to copy them to the new backing
-    //     for i in 0..migratory_capacity
-    //     {
-    //         // Claim the write lock, since it will also be wiped
-    //         let mut bucket = migratory_vector[i].write().unwrap();
-    //         // Take from the Option to return contents and overwrite with None
-    //         let mut current = bucket.entries.take();
-    //         while current.is_some()
-    //         {
-    //             // Migrate this specific record
-    //             let record = current.unwrap();
-    //             self.migratory_insert(
-    //                 record.hash,
-    //                 &record.name,
-    //                 record.salary
-    //             );
-    //
-    //             // Make it go to the next node
-    //             // The Option is technically cloned, but this is cheap
-    //             // The encapsulated Arc has its reference incremented
-    //             // the internal type T is NOT cloned
-    //             current = record.next.clone().take();
-    //         }
-    //         // Drop write lock
-    //         drop(bucket);
-    //     }
-    //
-    //     // The old migrating pointer is no longer needed as it has been fully migrated,
-    //     // so drop it to reclaim the memory
-    //     self.is_migrating.store(false, Ordering::Release);
-    //     self.migrating.store(ptr::null_mut(), Ordering::Release);
-    //     unsafe {
-    //         drop(Arc::from_raw(migrating));
-    //     }
-    //     // Resizing has completed
-    //     self.is_resizing.store(false, Ordering::Release);
-    // }
-
-    fn compress(&self, hash: u32) -> usize {
-        return (hash % self.capacity() as u32) as usize;
+    pub fn logger(&self) -> Arc<Logger> {
+        Arc::clone(&self.logger)
     }
-
-    fn migratory_insert(&self, hash: u32, name: &String, salary: u32) {
-        todo!()
+    
+    fn compress(&self, hash: u32) -> usize {
+        (hash % self.capacity() as u32) as usize
     }
 }

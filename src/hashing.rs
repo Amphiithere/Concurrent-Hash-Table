@@ -29,7 +29,7 @@ pub fn one_at_a_time(string: &str) -> u32
     hash ^= hash >> 11;
     hash += hash << 15;
 
-    return hash.0;
+    hash.0
 }
 
 pub fn assert() {

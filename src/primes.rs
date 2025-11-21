@@ -2,7 +2,7 @@
 pub fn search_closest_larger(target: u32) -> u32
 {
     // Arrays have a binary search method built-in
-    return match PRIMES.binary_search(&target) {
+    match PRIMES.binary_search(&target) {
         // Unpack the contained position as the variable 'index'
         Ok(index) => PRIMES[index], // Returns the exact index of the target
         Err(index) => {
@@ -16,7 +16,7 @@ pub const LENGTH: usize = PRIMES.len();
 pub const MAX_INDEX: usize = LENGTH - 1;
 
 pub fn exceeds_largest(target: u32) -> bool {
-    return target > MAX_PRIME;
+    target > MAX_PRIME
 }
 
 /// The first 10,000 primes.

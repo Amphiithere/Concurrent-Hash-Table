@@ -13,3 +13,15 @@ this is to separate user and theme CSS */
 }
 
 /* change navbar text formatting(?) */
+
+.navBtn {
+  background-color: red;
+  border: none;
+  color: white;
+  padding: 15px 32px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 16px;
+  cursor: pointer;
+}
